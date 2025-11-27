@@ -1,0 +1,848 @@
+/* =========================================================
+   DOAEDU - front-end com localStorage
+   + Admin: editar/apagar tudo e gerenciar usuários
+   Admin (seed): admin@doaedu.com.br / admin123
+   ========================================================= */
+
+const KEYS = {
+  users: "doaedu_users",
+  session: "doaedu_session",
+  items: "doaedu_items",
+  interactions: "doaedu_interactions"
+};
+
+// -------- helpers --------
+const load = (k, fallback) => { try { return JSON.parse(localStorage.getItem(k)) ?? fallback; } catch { return fallback; } };
+const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const $  = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const toast = (msg)=>{ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2200); };
+
+// ===== ADMIN CONFIG =====
+const ADMIN = {
+  email: "admin@doaedu.com.br",
+  senha: "admin123",
+  nome:  "Administrador",
+  tel:   "(11) 90000-0000"
+};
+
+// -------- seed --------
+(function seed(){
+  if (!load(KEYS.items)) {
+    save(KEYS.items, [
+      { id: 1, nome: "Caixa de Lápis de Cor", categoria: "Material escolar", estado: "Novo",  foto: "", desc: "Conjunto 12 cores", owner: "demo@doaedu", donated:false },
+      { id: 2, nome: "Caderno 1/4",          categoria: "Material escolar", estado: "Bom",   foto: "", desc: "Capa dura, 96 folhas", owner: "demo@doaedu", donated:false },
+      { id: 3, nome: "Livro Didático – Português", categoria: "Livro", estado: "Usado", foto: "", desc: "Ótimo para 3º ano", owner: "demo@doaedu", donated:false }
+    ]);
+  }
+  if (!load(KEYS.users)) {
+    save(KEYS.users, [
+      { email:"demo@doaedu",  nome:"Doador Demo",  tel:"(85) 90000-0000", senha:"demodemo",  end:"", numero:"", notifs:false, role:"user" },
+      { email:ADMIN.email,    nome:ADMIN.nome,     tel:ADMIN.tel,         senha:ADMIN.senha, end:"", numero:"", notifs:true,  role:"admin" }
+    ]);
+  }
+  if (!load(KEYS.interactions)) save(KEYS.interactions, []);
+})();
+
+// -------- sessão / user util --------
+const currentSession = () => load(KEYS.session, null);
+const currentUser = () => {
+  const s = currentSession(); if (!s) return null;
+  return load(KEYS.users, []).find(u => u.email === s.email) || null;
+};
+const isAdmin = () => (currentUser()?.role === "admin");
+const login = (email) => save(KEYS.session, { email });
+const logout = () => localStorage.removeItem(KEYS.session);
+
+// ===== Migração/garantia do admin para o e-mail novo =====
+function ensureAdminSeed(){
+  let users = load(KEYS.users, []);
+  if (!Array.isArray(users)) users = [];
+
+  let idxAdmin = users.findIndex(u => u.role === "admin");
+  if (idxAdmin === -1) {
+    users.push({ email:ADMIN.email, nome:ADMIN.nome, tel:ADMIN.tel, senha:ADMIN.senha, end:"", numero:"", notifs:true, role:"admin" });
+    save(KEYS.users, users);
+    return;
+  }
+
+  const oldEmail = users[idxAdmin].email;
+  if (oldEmail === ADMIN.email) return;
+
+  const clash = users.findIndex(u => u.email === ADMIN.email && u.role !== "admin");
+  if (clash !== -1) {
+    users[clash].role = "admin";
+    const removed = users.splice(idxAdmin, 1)[0];
+    save(KEYS.users, users);
+    migrateEmailEverywhere(removed.email, users[clash].email);
+  } else {
+    users[idxAdmin].email = ADMIN.email;
+    users[idxAdmin].nome  = users[idxAdmin].nome || ADMIN.nome;
+    users[idxAdmin].tel   = users[idxAdmin].tel  || ADMIN.tel;
+    users[idxAdmin].senha = users[idxAdmin].senha|| ADMIN.senha;
+    save(KEYS.users, users);
+    migrateEmailEverywhere(oldEmail, ADMIN.email);
+  }
+}
+
+function migrateEmailEverywhere(oldEmail, newEmail){
+  const items = (load(KEYS.items, [])||[]).map(it => it.owner === oldEmail ? { ...it, owner:newEmail } : it);
+  save(KEYS.items, items);
+
+  const inters = (load(KEYS.interactions, [])||[]).map(x => {
+    const y = { ...x };
+    if (y.userEmail === oldEmail) y.userEmail = newEmail;
+    if (y.item && y.item.owner === oldEmail) y.item = { ...y.item, owner:newEmail };
+    return y;
+  });
+  save(KEYS.interactions, inters);
+
+  const s = currentSession();
+  if (s && s.email === oldEmail) {
+    login(newEmail);
+  }
+}
+
+// ========= Público / Auth Overlay =========
+const elPublic  = $("#public-app");
+const elApp     = $("#main-app");
+const elOverlay = $("#auth-overlay");
+
+function clearAuthForms(){
+  $("#login-form")?.reset();
+  $("#register-form")?.reset();
+  $("#reset-email").value = "";
+}
+
+function openAuth(mode="landing"){ elOverlay.style.display = "grid"; showAuth(mode); }
+function closeAuth(){ elOverlay.style.display = "none"; clearAuthForms(); }
+
+// Evitar fechar ao selecionar texto / clicar dentro
+elOverlay.addEventListener("click", (e)=>{
+  if (e.target !== elOverlay) return;
+  if (window.getSelection && window.getSelection().toString().length > 0) return; // não fecha se há seleção
+  closeAuth();
+});
+// bloqueia propagação dentro dos cartões
+$$(".auth-card").forEach(card=>{
+  ["mousedown","mouseup","click"].forEach(ev => card.addEventListener(ev, e=> e.stopPropagation()));
+});
+document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeAuth(); });
+
+function showAuth(which){
+  $("#auth-landing").style.display = (which === "landing") ? "block" : "none";
+  $("#login-form").style.display   = (which === "login")   ? "block" : "none";
+  $("#register-form").style.display= (which === "register")? "block" : "none";
+  $("#forgot-box").style.display   = (which === "forgot")  ? "block" : "none";
+}
+
+$("#open-login").addEventListener("click", ()=> openAuth("login"));
+$("#open-register").addEventListener("click", ()=> openAuth("register"));
+document.addEventListener("click", (e)=>{
+  const needs = e.target.closest(".needs-auth");
+  if (needs) openAuth("login");
+});
+
+$("#go-login").addEventListener("click", ()=> showAuth("login"));
+$("#go-register").addEventListener("click", ()=> showAuth("register"));
+$("#link-go-register").addEventListener("click", (e)=>{ e.preventDefault(); showAuth("register"); });
+$("#link-go-login").addEventListener("click", (e)=>{ e.preventDefault(); showAuth("login"); });
+$("#forgot-link").addEventListener("click", (e)=>{ e.preventDefault(); showAuth("forgot"); });
+$("#cancel-reset").addEventListener("click", ()=> showAuth("login"));
+$("#reset-btn").addEventListener("click", ()=>{
+  const email = $("#reset-email").value.trim();
+  if (!email) return toast("Informe um e-mail válido.");
+  toast("Enviamos um link de redefinição (simulado).");
+  showAuth("login");
+});
+
+// cadastro
+$("#register-form").addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const nome    = $("#reg-nome").value.trim();
+  const email   = $("#reg-email").value.trim().toLowerCase();
+  const tel     = $("#reg-tel").value.trim();
+  const senha   = $("#reg-senha").value;
+  const confirma= $("#reg-confirma").value;
+
+  if (!tel) return toast("Informe um telefone para contato.");
+  if (senha.length < 6) return toast("A senha deve ter ao menos 6 caracteres.");
+  if (senha !== confirma) return toast("As senhas não conferem.");
+
+  const users = load(KEYS.users, []);
+  if (users.some(u => u.email === email)) return toast("Já existe uma conta com esse e-mail.");
+
+  users.push({ email, nome, tel, senha, end:"", numero:"", notifs:false, role:"user" });
+  save(KEYS.users, users);
+  toast("Cadastro realizado! Faça login.");
+  clearAuthForms();
+  showAuth("login");
+});
+
+// login
+$("#login-form").addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const email = e.target.email.value.trim().toLowerCase();
+  const senha = e.target.senha.value;
+  const user  = load(KEYS.users, []).find(u => u.email === email && u.senha === senha);
+  if (!user) return toast("Credenciais inválidas.");
+  login(email);
+  clearAuthForms();
+  startApp();
+});
+
+// ========= App logado =========
+$("#logout").addEventListener("click", ()=>{
+  logout();
+  elApp.style.display = "none";
+  elPublic.style.display = "flex";
+  closeAuth();
+  renderListPublic($("#public-filter").value || "");
+  toast("Você saiu da conta.");
+});
+
+function switchView(id){
+  $$(".view").forEach(v => v.style.display = "none");
+  $("#"+id).style.display = "block";
+  $("#top-title").textContent = ({
+    dashboard:"Dashboard",doar:"Doar Material",solicitar:"Solicitar Material",
+    meus: isAdmin() ? "Todos os Materiais" : "Meu Material",
+    interacoes:"Minhas Interações",config:"Configurações",admin:"Administração"
+  })[id] || "DOAEDU";
+  $$(".nav button[data-view]").forEach(b => b.classList.toggle("active", b.dataset.view === id));
+  if (id === "meus") renderMyItems();
+  if (id === "interacoes") renderInteractionsFull();
+  if (id === "admin") renderAdminUsers();
+}
+$$(".nav button[data-view]").forEach(btn => btn.addEventListener("click", e => {
+  if (elApp.style.display === "none") return;
+  switchView(e.currentTarget.dataset.view);
+}));
+$("#open-doar").addEventListener("click", ()=> switchView("doar"));
+
+// ========= Upload/Preview de imagem =========
+let photoDoarDataURL = null;
+let photoEditDataURL = null;
+
+function fileToDataURL(file, cb){
+  const r = new FileReader();
+  r.onload = () => cb(r.result);
+  r.readAsDataURL(file);
+}
+
+const fotoFile = $("#foto-file");
+if (fotoFile) {
+  fotoFile.addEventListener("change", (e)=>{
+    const f = e.target.files?.[0];
+    if (!f) { photoDoarDataURL = null; $("#preview-doar").innerHTML = ""; return; }
+    fileToDataURL(f, (data)=>{
+      photoDoarDataURL = data;
+      $("#preview-doar").innerHTML = `<img src="${data}" alt="preview">`;
+    });
+  });
+}
+
+const editFotoFile = $("#edit-foto-file");
+if (editFotoFile) {
+  editFotoFile.addEventListener("change", (e)=>{
+    const f = e.target.files?.[0];
+    if (!f) { photoEditDataURL = null; return; }
+    fileToDataURL(f, (data)=>{
+      photoEditDataURL = data;
+      $("#preview-edit").innerHTML = `<img src="${data}" alt="preview">`;
+    });
+  });
+}
+
+// ========= Listas / helpers =========
+function hasRequested(itemId, email){
+  const inters = load(KEYS.interactions, []);
+  return inters.some(i => i.userEmail === email && i.tipo === "solicitacao" && i.item?.id === itemId);
+}
+
+function itemActionButton(it){
+  const user = currentUser();
+  if (it.donated) return `<span class="badge">Doado</span>`;
+  if (isAdmin()) {
+    return `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn ghost" data-admin-edit="${it.id}">Editar</button>
+        <button class="btn ghost" data-admin-del="${it.id}">Apagar</button>
+      </div>
+    `;
+  }
+  if (user && it.owner === user.email) return `<button class="btn" disabled>Seu item</button>`;
+  if (user && hasRequested(it.id, user.email)) return `<button class="btn" disabled>Solicitado</button>`;
+  return `<button class="btn" data-solicitar="${it.id}">Solicitar</button>`;
+}
+
+function itemHtml(it, withAction=true){
+  const img = it.foto
+    ? `<img src="${it.foto}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:12px">`
+    : `<div class="item-thumb">${(it.nome||"I").slice(0,2).toUpperCase()}</div>`;
+  return `
+    <div class="item-card">
+      ${img}
+      <div style="flex:1">
+        <strong>${it.nome}</strong>
+        <div class="muted">${it.categoria}</div>
+        <div class="badges">
+          <span class="badge">${it.estado}</span>
+          ${it.desc ? `<span class="badge">${it.desc}</span>` : ""}
+          ${it.donated ? `<span class="badge">Doado</span>` : ""}
+        </div>
+      </div>
+      ${withAction ? `<div>${itemActionButton(it)}</div>` : ""}
+    </div>
+  `;
+}
+
+function availableOnly(arr){
+  return arr.filter(it => !it.donated);
+}
+
+function renderListPublic(filterText=""){
+  const items = load(KEYS.items, []).map(i => ({ donated:false, ...i })); // default donated=false
+  const f = (filterText||"").trim().toLowerCase();
+  const filtered = availableOnly(items).filter(it => !f || it.nome.toLowerCase().includes(f) || it.categoria.toLowerCase().includes(f));
+  $("#public-list").innerHTML = filtered.map(it => itemHtml(it, false).replace(
+    '</div></div>',
+    `</div><div><button class="btn needs-auth">Solicitar</button></div></div>`
+  )).join("");
+  $("#public-filter").removeEventListener("input", onPublicFilter);
+  $("#public-filter").addEventListener("input", onPublicFilter);
+}
+function onPublicFilter(e){ renderListPublic(e.target.value); }
+
+function renderListPrivate(filterText=""){
+  const items = load(KEYS.items, []).map(i => ({ donated:false, ...i }));
+  const f = (filterText||"").trim().toLowerCase();
+  const filtered = availableOnly(items).filter(it => !f || it.nome.toLowerCase().includes(f) || it.categoria.toLowerCase().includes(f));
+  const html = filtered.map(it => itemHtml(it, true)).join("");
+  $("#list").innerHTML = html;
+  $("#sol-list").innerHTML = html;
+
+  $$('#list [data-solicitar], #sol-list [data-solicitar]').forEach(b =>
+    b.addEventListener("click", ()=> requestItem(+b.dataset.solicitar))
+  );
+
+  if (isAdmin()) {
+    $$('#list [data-admin-edit], #sol-list [data-admin-edit]').forEach(b =>
+      b.addEventListener("click", ()=> openEditItem(+b.dataset.adminEdit))
+    );
+    $$('#list [data-admin-del], #sol-list [data-admin-del]').forEach(b =>
+      b.addEventListener("click", ()=> deleteItem(+b.dataset.adminDel))
+    );
+  }
+
+  $("#filter").removeEventListener("input", onPrivateFilter);
+  $("#filter").addEventListener("input", onPrivateFilter);
+}
+function onPrivateFilter(e){ renderListPrivate(e.target.value); }
+
+// ========= Meu Material (listar, doar, editar, apagar) =========
+function renderMyItems(){
+  const user = currentUser(); if (!user) return;
+  const all = load(KEYS.items, []).map(i => ({ donated:false, ...i }));
+  const inters = load(KEYS.interactions, []);
+  const items = isAdmin() ? all : all.filter(i => i.owner === user.email);
+  $("#meus-title").textContent = isAdmin() ? "Todos os Materiais" : "Meu Material";
+  $("#meus-desc").textContent  = isAdmin() ? "Lista global de materiais (admin pode editar/apagar)." : "Itens que você cadastrou na plataforma.";
+
+  const html = items.length ? items.map(it => {
+    const reqs = inters.filter(x => x.tipo==="solicitacao" && x.item?.id === it.id);
+    const reqCount = reqs.length;
+    const donatedInfo = it.donated && it.donatedTo ? ` • Doado para: ${it.donatedTo}` : "";
+    return `
+    <div class="item-card">
+      ${it.foto ? `<img src="${it.foto}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:12px">` : `<div class="item-thumb">${(it.nome||"I").slice(0,2).toUpperCase()}</div>`}
+      <div style="flex:1">
+        <strong>${it.nome}</strong>
+        <div class="muted">${it.categoria} • ${it.estado}${donatedInfo}</div>
+        ${it.desc ? `<div class="muted">${it.desc}</div>` : ""}
+        <div class="u-meta">Doador: ${it.owner}</div>
+        <div class="badges" style="margin-top:6px">
+          <span class="badge">Solicitações: ${reqCount}</span>
+          ${it.donated ? `<span class="badge">Doado</span>` : ""}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${!it.donated && reqCount>0 ? `<button class="btn" data-donate="${it.id}">Marcar doação</button>` : ""}
+        <button class="btn ghost" data-edit="${it.id}">Editar</button>
+        <button class="btn ghost" data-del="${it.id}">Apagar</button>
+      </div>
+    </div>
+  `}).join("") : `<div class="muted">${isAdmin() ? "Não há materiais cadastrados." : "Você ainda não publicou itens."}</div>`;
+  $("#meus-list").innerHTML = html;
+
+  $$('#meus-list [data-del]').forEach(b => b.addEventListener("click", ()=> deleteItem(+b.dataset.del)));
+  $$('#meus-list [data-edit]').forEach(b => b.addEventListener("click", ()=> openEditItem(+b.dataset.edit)));
+  $$('#meus-list [data-donate]').forEach(b => b.addEventListener("click", ()=> openDonateItem(+b.dataset.donate)));
+}
+
+function deleteItem(id){
+  const user = currentUser(); if (!user) return;
+  const items = load(KEYS.items, []);
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  if (!isAdmin() && item.owner !== user.email) return;
+  if (!confirm(`Apagar "${item.nome}"?`)) return;
+
+  save(KEYS.items, items.filter(i => i.id !== id));
+  const inters = load(KEYS.interactions, []).filter(i => (i.item?.id !== id));
+  save(KEYS.interactions, inters);
+
+  renderMyItems();
+  renderListPrivate($("#filter")?.value || "");
+  renderInteractions();
+  updateKPIs();
+  toast("Item apagado.");
+}
+
+// ======= Editar Item (modal) =======
+const editOverlay = $("#edit-item-overlay");
+const editForm = $("#form-edit-item");
+$("#cancel-edit-item").addEventListener("click", ()=> editOverlay.style.display = "none");
+editOverlay.addEventListener("click", (e)=>{ if(e.target === editOverlay) editOverlay.style.display="none"; });
+
+function openEditItem(id){
+  const user = currentUser(); if (!user) return;
+  const items = load(KEYS.items, []);
+  const it = items.find(i => i.id === id);
+  if (!it) return;
+  if (!isAdmin() && it.owner !== user.email) return;
+
+  photoEditDataURL = null;
+  editForm.id.value = it.id;
+  editForm.nome.value = it.nome;
+  editForm.categoria.value = it.categoria;
+  editForm.estado.value = it.estado;
+  editForm.foto.value = it.foto || "";
+  editForm.descricao.value = it.desc || "";
+  $("#preview-edit").innerHTML = it.foto ? `<img src="${it.foto}" alt="preview">` : "";
+  editOverlay.style.display = "grid";
+}
+
+editForm.addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const fd = new FormData(editForm);
+  const id = +fd.get("id");
+  const items = load(KEYS.items, []);
+  const idx = items.findIndex(i => i.id === id);
+  if (idx < 0) return;
+
+  items[idx] = {
+    ...items[idx],
+    nome: fd.get("nome"),
+    categoria: fd.get("categoria"),
+    estado: fd.get("estado"),
+    foto: photoEditDataURL || fd.get("foto") || items[idx].foto || "",
+    desc: fd.get("descricao") || ""
+  };
+  save(KEYS.items, items);
+
+  let inters = load(KEYS.interactions, []);
+  inters = inters.map(x => x.item?.id === id ? { ...x, item: { ...items[idx] } } : x);
+  save(KEYS.interactions, inters);
+
+  editOverlay.style.display = "none";
+  renderMyItems();
+  renderListPrivate($("#filter")?.value || "");
+  renderInteractions();
+  updateKPIs();
+  toast("Material atualizado.");
+});
+
+// ======= Marcar Doação (modal) =======
+const donateOverlay = $("#donate-overlay");
+const donateList = $("#donate-requests");
+const donateConfirm = $("#donate-confirm");
+const donateCancel = $("#donate-cancel");
+let donateItemId = null;
+let donateSelectedEmail = null;
+
+donateCancel.addEventListener("click", ()=> { donateOverlay.style.display="none"; donateSelectedEmail=null; donateItemId=null; });
+donateOverlay.addEventListener("click", (e)=>{ if(e.target===donateOverlay) donateCancel.click(); });
+
+function openDonateItem(id){
+  donateItemId = +id;
+  donateSelectedEmail = null;
+  const inters = load(KEYS.interactions, []).filter(i => i.tipo==="solicitacao" && i.item?.id === donateItemId);
+  const users = load(KEYS.users, []);
+  if (!inters.length) {
+    donateList.innerHTML = `<div class="muted">Ainda não há solicitações para este item.</div>`;
+    donateConfirm.disabled = true;
+  } else {
+    donateList.innerHTML = inters.map((x, idx)=>{
+      const u = users.find(z => z.email === x.userEmail);
+      const nome = u?.nome || x.userEmail;
+      const tel  = u?.tel || "(sem telefone)";
+      return `
+        <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <input type="radio" name="don-rec" value="${x.userEmail}" />
+          <div>
+            <div><strong>${nome}</strong> — ${x.userEmail}</div>
+            <div class="muted" style="font-size:12px">Telefone: ${tel}</div>
+          </div>
+        </label>
+      `;
+    }).join("");
+    donateConfirm.disabled = true;
+
+    donateList.querySelectorAll('input[name="don-rec"]').forEach(r=>{
+      r.addEventListener("change", ()=>{
+        donateSelectedEmail = r.value;
+        donateConfirm.disabled = !donateSelectedEmail;
+      });
+    });
+  }
+  donateOverlay.style.display = "grid";
+}
+
+donateConfirm.addEventListener("click", ()=>{
+  if (!donateItemId || !donateSelectedEmail) return;
+  const items = load(KEYS.items, []).map(i => i.id === donateItemId ? { ...i, donated:true, donatedTo: donateSelectedEmail, donatedAt: new Date().toISOString() } : i);
+  save(KEYS.items, items);
+
+  let inters = load(KEYS.interactions, []).map(x=>{
+    if (x.item?.id !== donateItemId) return x;
+    const updatedItem = items.find(i => i.id === donateItemId);
+    const y = { ...x, item: { ...updatedItem } };
+    if (x.tipo === "solicitacao") {
+      if (x.userEmail === donateSelectedEmail) y.status = "Doado para você";
+      else y.status = "Encerrado — doado para outro";
+    }
+    if (x.tipo === "doacao" && x.userEmail === updatedItem.owner) {
+      y.status = "Doado em " + new Date().toLocaleString();
+    }
+    return y;
+  });
+  save(KEYS.interactions, inters);
+
+  donateOverlay.style.display = "none";
+  donateSelectedEmail=null; donateItemId=null;
+
+  renderMyItems();
+  renderListPrivate($("#filter")?.value || "");
+  renderInteractions();
+  updateKPIs();
+  toast("Doação registrada com sucesso.");
+});
+
+// ========= Interações / KPIs =========
+function updateKPIs(){
+  const user = currentUser(); if (!user) return;
+  const inters = load(KEYS.interactions, []).filter(i => i.userEmail === user.email);
+  const myDonations = load(KEYS.items, []).filter(it => it.owner === user.email && !!it.donated).length;
+  $("#count-int").textContent = inters.length;
+  $("#count-don").textContent = myDonations;
+  $("#count-req").textContent = inters.filter(i => i.tipo === "solicitacao").length;
+}
+
+function renderInteractions(){
+  const user = currentUser();
+  const inters = load(KEYS.interactions, []).filter(i => i.userEmail === user.email);
+
+  $("#interactions").textContent = inters.length ? `${inters.length} interação(ões)` : "Nenhuma interação ainda.";
+  $("#minhas").innerHTML = inters.slice().reverse().map((x, idx) => `
+      <div class="item-card inter-card" data-int="${idx}">
+        <div style="flex:1">
+          <strong>${x.item.nome}</strong>
+          <div class="muted">${x.tipo === "doacao" ? "Doação" : "Solicitação"} • ${x.status} • ${x.data}</div>
+          <div class="inter-details"></div>
+        </div>
+      </div>
+    `).join("");
+
+  $$('#minhas .inter-card').forEach((card, idx)=>{
+    card.addEventListener("click", ()=>{
+      const box = card.querySelector(".inter-details");
+      const visible = box.style.display === "block";
+      $$('#minhas .inter-details').forEach(d => d.style.display = "none");
+      if (visible) return;
+
+      const x = inters.slice().reverse()[idx];
+      if (x.tipo === "solicitacao") {
+        const users = load(KEYS.users, []);
+        const owner = users.find(u => u.email === x.item.owner);
+        const tel = owner?.tel || "(contato indisponível)";
+        const end = [owner?.end, owner?.numero].filter(Boolean).join(", ");
+        box.innerHTML = `Contato do doador: <strong>${owner?.nome || "Usuário"}</strong> — <a href="tel:${tel}">${tel}</a> ${end ? `• Endereço: ${end}` : ""}`;
+      } else {
+        box.innerHTML = x.item?.donated ? `Item doado em ${new Date(x.item.donatedAt||Date.now()).toLocaleString()}.` : `Este item está publicado e aguardando solicitações.`;
+      }
+      box.style.display = "block";
+    });
+  });
+
+  updateKPIs();
+}
+
+function renderInteractionsFull(){
+  const user = currentUser();
+  const inters = load(KEYS.interactions, []).filter(i => i.userEmail === user.email).reverse();
+  $("#minhas-full").innerHTML = inters.length ? inters.map(x=>{
+    const users = load(KEYS.users, []);
+    const owner = users.find(u => u.email === x.item.owner);
+    const tel = owner?.tel || "(contato indisponível)";
+    const end = [owner?.end, owner?.numero].filter(Boolean).join(", ");
+    const contato = x.tipo === "solicitacao"
+      ? `<div class="inter-details" style="display:block">Contato do doador: <strong>${owner?.nome || "Usuário"}</strong> — <a href="tel:${tel}">${tel}</a> ${end ? `• Endereço: ${end}` : ""}</div>`
+      : `<div class="inter-details" style="display:block">${x.item?.donated ? `Item doado em ${new Date(x.item.donatedAt||Date.now()).toLocaleString()}.` : `Este item está publicado e aguardando solicitações.`}</div>`;
+    return `
+      <div class="item-card">
+        <div style="flex:1">
+          <strong>${x.item.nome}</strong>
+          <div class="muted">${x.tipo === "doacao" ? "Doação" : "Solicitação"} • ${x.status} • ${x.data}</div>
+          ${contato}
+        </div>
+      </div>
+    `;
+  }).join("") : `<div class="muted">Você ainda não possui interações.</div>`;
+  updateKPIs();
+}
+
+// ========= Ações: doar / solicitar / configs / senha =========
+$("#form-doar").addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const user = currentUser();
+  const fd = new FormData(e.target);
+  const novo = {
+    id: Date.now(),
+    nome: fd.get("nome"),
+    categoria: fd.get("categoria"),
+    estado: fd.get("estado"),
+    foto: photoDoarDataURL || fd.get("foto"),
+    desc: fd.get("descricao"),
+    owner: user.email,
+    donated: false
+  };
+  const items = load(KEYS.items, []); items.unshift(novo); save(KEYS.items, items);
+
+  const inters = load(KEYS.interactions, []);
+  inters.push({ userEmail:user.email, tipo:"doacao", item:{...novo}, status:"Publicado", data:new Date().toLocaleString() });
+  save(KEYS.interactions, inters);
+
+  $("#preview-doar").innerHTML = "";
+  if ($("#foto-file")) $("#foto-file").value = "";
+  photoDoarDataURL = null;
+
+  renderListPrivate($("#filter").value);
+  renderMyItems();
+  renderInteractions();
+  updateKPIs();
+  toast("Item publicado com sucesso!");
+  switchView("dashboard");
+});
+$("#cancel-doar").addEventListener("click", ()=> switchView("dashboard"));
+
+function requestItem(id){
+  const user = currentUser();
+  const items = load(KEYS.items, []).map(i => ({ donated:false, ...i }));
+  const item = items.find(i => i.id === id);
+  if (!item) return toast("Item não encontrado.");
+  if (item.donated) return toast("Este item já foi doado.");
+  if (item.owner === user.email) return toast("Você não pode solicitar um item que é seu.");
+  if (hasRequested(id, user.email)) return toast("Você já solicitou este material.");
+
+  const inters = load(KEYS.interactions, []);
+  inters.push({ userEmail:user.email, tipo:"solicitacao", item:{...item}, status:"Em andamento", data:new Date().toLocaleString() });
+  save(KEYS.interactions, inters);
+
+  renderListPrivate($("#filter")?.value || "");
+  renderInteractions();
+  updateKPIs();
+  toast("Solicitação enviada: " + item.nome);
+}
+
+// Configurações (dados)
+$("#form-config").addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const s = currentSession(); if (!s) return;
+  const users = load(KEYS.users, []);
+  const idx = users.findIndex(u => u.email === s.email); if (idx < 0) return;
+
+  const fd = new FormData(e.target);
+  users[idx].nome   = fd.get("nome")   || users[idx].nome;
+  users[idx].end    = fd.get("end")    || "";
+  users[idx].numero = fd.get("numero") || "";
+  users[idx].tel    = fd.get("tel")    || users[idx].tel;
+  users[idx].notifs = !!fd.get("notifs");
+  save(KEYS.users, users);
+  $("#user-name").textContent = users[idx].nome || users[idx].email;
+  toast("Configurações salvas.");
+});
+
+// Alterar senha
+$("#form-pass").addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const s = currentSession(); if (!s) return;
+  const users = load(KEYS.users, []);
+  const idx = users.findIndex(u => u.email === s.email); if (idx < 0) return;
+
+  const fd = new FormData(e.target);
+  const old  = fd.get("old");
+  const nova = fd.get("nova");
+  const conf = fd.get("conf");
+  if (users[idx].senha !== old) return toast("Senha atual incorreta.");
+  if (nova.length < 6) return toast("A nova senha deve ter ao menos 6 caracteres.");
+  if (nova !== conf) return toast("Confirmação não confere.");
+  users[idx].senha = nova;
+  save(KEYS.users, users);
+  e.target.reset();
+  toast("Senha atualizada com sucesso.");
+});
+
+// ========= Admin: Usuários =========
+const adminBtn = $("#nav-admin");
+const editUserOverlay = $("#edit-user-overlay");
+const editUserForm = $("#form-edit-user");
+$("#cancel-edit-user").addEventListener("click", ()=> editUserOverlay.style.display="none");
+editUserOverlay.addEventListener("click", (e)=>{ if(e.target===editUserOverlay) editUserOverlay.style.display="none"; });
+
+function renderAdminUsers(){
+  const users = load(KEYS.users, []);
+  $("#admin-users").innerHTML = users.map(u => `
+    <div class="user-row">
+      <div class="u-main">
+        <strong>${u.nome || "(sem nome)"}</strong>
+        <div class="u-meta">${u.email} • ${u.tel || "(sem telefone)"} • Função: <b>${u.role || "user"}</b></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" data-u-edit="${u.email}">Editar</button>
+        <button class="btn ghost" data-u-del="${u.email}">Apagar</button>
+      </div>
+    </div>
+  `).join("");
+
+  $$('#admin-users [data-u-edit]').forEach(b => b.addEventListener("click", ()=> openEditUser(b.dataset.uEdit)));
+  $$('#admin-users [data-u-del]').forEach(b => b.addEventListener("click", ()=> adminDeleteUser(b.dataset.uDel)));
+}
+
+function openEditUser(email){
+  const users = load(KEYS.users, []);
+  const u = users.find(x => x.email === email); if (!u) return;
+  editUserForm.oldEmail.value = u.email;
+  editUserForm.nome.value = u.nome || "";
+  editUserForm.email.value = u.email;
+  editUserForm.tel.value = u.tel || "";
+  editUserForm.end.value = u.end || "";
+  editUserForm.numero.value = u.numero || "";
+  editUserForm.role.value = u.role || "user";
+  editUserForm.senha.value = "";
+  editUserOverlay.style.display = "grid";
+}
+
+editUserForm.addEventListener("submit", (e)=>{
+  e.preventDefault();
+  const fd = new FormData(editUserForm);
+  const oldEmail = fd.get("oldEmail");
+  const users = load(KEYS.users, []);
+  const idx = users.findIndex(u => u.email === oldEmail); if (idx < 0) return;
+
+  const newEmail = (fd.get("email")||"").trim().toLowerCase();
+  if (!newEmail) return toast("E-mail inválido.");
+  if (newEmail !== oldEmail && users.some(u => u.email === newEmail)) return toast("Já existe usuário com esse e-mail.");
+
+  users[idx].nome   = fd.get("nome") || users[idx].nome;
+  users[idx].email  = newEmail;
+  users[idx].tel    = fd.get("tel") || "";
+  users[idx].end    = fd.get("end") || "";
+  users[idx].numero = fd.get("numero") || "";
+  users[idx].role   = fd.get("role") || "user";
+  const senhaNova = fd.get("senha");
+  if (senhaNova) users[idx].senha = senhaNova;
+  save(KEYS.users, users);
+
+  const items = load(KEYS.items, []).map(it => it.owner === oldEmail ? { ...it, owner:newEmail } : it);
+  save(KEYS.items, items);
+
+  let inters = load(KEYS.interactions, []).map(x => {
+    const updated = { ...x };
+    if (x.userEmail === oldEmail) updated.userEmail = newEmail;
+    if (x.item?.owner === oldEmail) updated.item = { ...x.item, owner:newEmail };
+    return updated;
+  });
+  save(KEYS.interactions, inters);
+
+  const s = currentSession();
+  if (s && s.email === oldEmail) {
+    login(newEmail);
+    $("#user-name").textContent = users[idx].nome || newEmail;
+  }
+
+  editUserOverlay.style.display = "none";
+  renderAdminUsers();
+  renderMyItems();
+  renderListPrivate($("#filter")?.value || "");
+  renderInteractions();
+  updateKPIs();
+  toast("Usuário atualizado.");
+});
+
+function adminDeleteUser(email){
+  if (currentSession()?.email === email) return toast("Você não pode remover a si mesmo.");
+  if (!confirm(`Remover o usuário ${email}? Todos os itens e interações dele serão apagados.`)) return;
+
+  let users = load(KEYS.users, []).filter(u => u.email !== email);
+  save(KEYS.users, users);
+
+  const items = load(KEYS.items, []).filter(it => it.owner !== email);
+  save(KEYS.items, items);
+
+  const inters = load(KEYS.interactions, []).filter(i => i.userEmail !== email && i.item?.owner !== email);
+  save(KEYS.interactions, inters);
+
+  renderAdminUsers();
+  renderMyItems();
+  renderListPrivate($("#filter")?.value || "");
+  renderInteractions();
+  updateKPIs();
+  toast("Usuário removido.");
+}
+
+// ========= Start =========
+function startApp(){
+  const u = currentUser(); if (!u) return;
+
+  const formCfg = $("#form-config");
+  formCfg.nome.value   = u.nome || "";
+  formCfg.end.value    = u.end  || "";
+  formCfg.numero.value = u.numero || "";
+  formCfg.tel.value    = u.tel  || "";
+  formCfg.notifs.checked = !!u.notifs;
+
+  $("#user-name").textContent = u.nome || u.email;
+
+  if (isAdmin()) {
+    $("#nav-admin").style.display = "flex";
+    $("#meus-label").textContent = "Todos os Materiais";
+  } else {
+    $("#nav-admin").style.display = "none";
+    $("#meus-label").textContent = "Meu Material";
+  }
+
+  elPublic.style.display = "none";
+  elApp.style.display = "flex";
+  closeAuth();
+
+  renderListPrivate($("#filter")?.value || "");
+  renderMyItems();
+  renderInteractions();
+  updateKPIs();
+  switchView("dashboard");
+}
+
+function startPublic(){
+  elPublic.style.display = "flex";
+  elApp.style.display = "none";
+  renderListPublic($("#public-filter")?.value || "");
+}
+
+// garante admin com o e-mail novo e migra dados antigos se preciso
+ensureAdminSeed();
+
+(function(){
+  if (currentSession()) startApp();
+  else startPublic();
+})();
