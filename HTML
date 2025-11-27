@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DOAEDU — Plataforma de Doação de Materiais</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- ===================== APP PÚBLICO (sem login) ===================== -->
+  <div class="app" id="public-app" aria-hidden="false">
+    <aside class="sidebar">
+      <div>
+        <div class="brand">
+          <img src="./doaedu_logo_horizontal.svg" alt="DOAEDU" class="brand-logo brand-logo--xl" />
+        </div>
+        <div class="muted">Plataforma solidária de materiais escolares</div>
+
+        <nav class="nav" style="margin-top:22px">
+          <button class="active" data-public="dashboard">
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+            </span>
+            <span>Dashboard</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-bottom">
+        <button id="open-login" class="btn w-full">Entrar</button>
+        <button id="open-register" class="btn ghost w-full" style="margin-top:10px">Criar conta</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="top">
+        <h1>Dashboard</h1>
+        <div class="top-actions">
+          <button class="btn needs-auth">Publicar item</button>
+        </div>
+      </div>
+
+      <section class="grid">
+        <div class="card card--soft">
+          <h3 class="section-title">Itens Disponíveis</h3>
+          <p class="muted">Filtre por categoria e explore os itens. Para solicitar, faça login.</p>
+          <div style="margin-top:14px">
+            <input id="public-filter" placeholder="Filtrar por tipo (ex: caderno, lápis)" />
+            <div id="public-list" style="margin-top:14px"></div>
+          </div>
+        </div>
+
+        <div class="card card--accent">
+          <div class="accent-head">
+            <img src="./doaedu_logo_icon.svg" alt="" class="accent-icon" />
+            <h3 class="section-title">Acesso completo</h3>
+          </div>
+          <ul class="muted" style="line-height:1.9;margin:10px 0 0">
+            <li>Doar materiais com fotos e descrição</li>
+            <li>Solicitar e acompanhar status</li>
+            <li>Ver suas interações e métricas</li>
+            <li>Editar perfil e preferências</li>
+          </ul>
+          <button class="btn needs-auth" style="margin-top:14px">Entrar para continuar</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===================== OVERLAY DE AUTENTICAÇÃO (suspenso) ===================== -->
+  <div id="auth-overlay" class="overlay" style="display:none">
+    <div class="auth-card" role="dialog" aria-modal="true">
+      <img src="./doaedu_logo_stacked.svg" alt="DOAEDU" class="auth-logo auth-logo--xl" />
+      <p class="subtitle">Acesse sua conta</p>
+
+      <div id="auth-landing">
+        <button class="btn w-full" id="go-login">Entrar</button>
+        <button class="btn ghost w-full" id="go-register" style="margin-top:10px">Criar conta</button>
+      </div>
+
+      <!-- Login -->
+      <form id="login-form" class="auth-form" style="display:none">
+        <label for="email">E-mail</label>
+        <input type="email" id="email" name="email" required placeholder="seu@email.com" />
+        <label for="senha">Senha</label>
+        <input type="password" id="senha" name="senha" required placeholder="••••••••" />
+        <button class="btn w-full" type="submit" style="margin-top:12px">Entrar</button>
+        <div style="margin-top:12px;text-align:center">
+          <a href="#" id="forgot-link" class="link">Esqueci minha senha</a>
+        </div>
+        <p class="muted small" style="margin-top:14px">
+          Novo por aqui? <a href="#" id="link-go-register" class="link">Criar conta</a>
+        </p>
+      </form>
+
+      <!-- Cadastro -->
+      <form id="register-form" class="auth-form" style="display:none">
+        <label for="reg-nome">Nome completo</label>
+        <input type="text" id="reg-nome" name="nome" required placeholder="Seu nome completo" />
+        <label for="reg-email">E-mail</label>
+        <input type="email" id="reg-email" name="email" required placeholder="seu@email.com" />
+        <label for="reg-tel">Telefone (WhatsApp)</label>
+        <input type="tel" id="reg-tel" name="tel" required placeholder="(11) 99999-0000" />
+        <label for="reg-senha">Senha</label>
+        <input type="password" id="reg-senha" name="senha" minlength="6" required placeholder="Mínimo 6 caracteres" />
+        <label for="reg-confirma">Confirmar senha</label>
+        <input type="password" id="reg-confirma" name="confirma" minlength="6" required placeholder="Repita a senha" />
+        <button class="btn w-full" type="submit" style="margin-top:12px">Criar conta</button>
+        <p class="muted small" style="margin-top:14px">
+          Já possui conta? <a href="#" id="link-go-login" class="link">Fazer login</a>
+        </p>
+      </form>
+
+      <!-- Esqueci a senha -->
+      <div id="forgot-box" class="auth-form" style="display:none">
+        <label for="reset-email">Digite seu e-mail para redefinir a senha</label>
+        <input type="email" id="reset-email" placeholder="seu@email.com" />
+        <button class="btn w-full" id="reset-btn" style="margin-top:8px">Enviar link</button>
+        <button class="btn ghost w-full" id="cancel-reset" style="margin-top:8px">Voltar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== APP LOGADO ===================== -->
+  <div class="app" id="main-app" style="display:none" aria-hidden="true">
+    <aside class="sidebar">
+      <div>
+        <div class="brand">
+          <img src="./doaedu_logo_horizontal.svg" alt="DOAEDU" class="brand-logo brand-logo--xl" />
+        </div>
+        <div class="muted">Plataforma solidária de materiais escolares</div>
+
+        <nav class="nav" style="margin-top:22px">
+          <button class="active" data-view="dashboard">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></span>
+            <span>Dashboard</span>
+          </button>
+          <button data-view="doar">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.33-8.24A5.5 5.5 0 0 1 12 6.09a5.5 5.5 0 0 1 9.33 6.67C19 16.65 12 21 12 21z"/></svg></span>
+            <span>Doar Material</span>
+          </button>
+          <button data-view="solicitar">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M7 7V6a5 5 0 0 1 10 0v1h1a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V9a2 2 0 0 1 2-2h1zm2 7h6v2H9z"/></svg></span>
+            <span>Solicitar Material</span>
+          </button>
+          <button data-view="meus">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M3 7h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7zm2-4h14l1 4H4l1-4z"/></svg></span>
+            <span id="meus-label">Meu Material</span>
+          </button>
+          <button data-view="interacoes">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M7 7h10v4l4-4-4-4v3H5a2 2 0 0 0-2 2v5h2V8a1 1 0 0 1 1-1zm10 10H7v-4l-4 4 4 4v-3h12a2 2 0 0 0 2-2v-5h-2v4a1 1 0 0 1-1 1z"/></svg></span>
+            <span>Minhas Interações</span>
+          </button>
+          <button data-view="config">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7zm8.94-2.91-.86-1.49.76-1.65-1.4-2.42-1.78.39-1.36-1.1-.16-1.82h-2.8l-.16 1.82-1.36 1.1-1.78-.39-1.4 2.42.76 1.65-.86 1.49.86 1.49-.76 1.65 1.4 2.42 1.78-.39 1.36 1.1.16 1.82h2.8l.16-1.82 1.36-1.1 1.78.39 1.4-2.42-.76-1.65.86-1.49z"/></svg></span>
+            <span>Configurações</span>
+          </button>
+          <button data-view="admin" id="nav-admin" style="display:none">
+            <span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 1l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg></span>
+            <span>Admin</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="muted">Logado como</div>
+        <div id="user-name" class="user-name">Usuário</div>
+        <button id="logout" class="btn ghost w-full" style="margin-top:12px">Sair</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="top">
+        <h1 id="top-title">Dashboard</h1>
+        <div><button class="btn" id="open-doar">Publicar item</button></div>
+      </div>
+
+      <section id="views">
+        <!-- Dashboard -->
+        <section class="view" id="dashboard">
+          <div class="grid">
+            <div class="card card--soft">
+              <h3 class="section-title">Itens Disponíveis</h3>
+              <p class="muted">Filtre por categoria e solicite itens.</p>
+              <div style="margin-top:14px">
+                <input id="filter" placeholder="Filtrar por tipo (ex: caderno, lápis)" />
+                <div id="list" style="margin-top:14px"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="section-title">Resumo</h3>
+              <p class="muted">Visão geral de suas interações.</p>
+              <div class="kpis">
+                <div class="kpi"><div class="kpi-num" id="count-don">0</div><div class="kpi-label">Doações</div></div>
+                <div class="kpi"><div class="kpi-num" id="count-req">0</div><div class="kpi-label">Solicitações</div></div>
+                <div class="kpi"><div class="kpi-num" id="count-int">0</div><div class="kpi-label">Interações</div></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="section-title">Minhas Interações</h3>
+              <div id="interactions" class="muted">Nenhuma interação ainda.</div>
+              <div id="minhas"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Doar -->
+        <section class="view" id="doar" style="display:none">
+          <div class="card">
+            <h2>Publicar Item para Doação</h2>
+            <form id="form-doar">
+              <div class="row">
+                <div style="flex:1"><label>Nome</label><input name="nome" required /></div>
+                <div style="width:220px"><label>Categoria</label>
+                  <select name="categoria"><option>Material escolar</option><option>Livro</option><option>Outros</option></select>
+                </div>
+              </div>
+              <div class="row">
+                <div style="flex:1"><label>Estado</label>
+                  <select name="estado"><option>Novo</option><option>Bom</option><option>Usado</option></select>
+                </div>
+                <div style="width:220px"><label>Foto (imagem)</label><input type="file" id="foto-file" accept="image/*" /></div>
+                <div style="width:220px"><label>ou Foto (URL)</label><input name="foto" placeholder="opcional" /></div>
+              </div>
+              <div class="thumb-preview" id="preview-doar"></div>
+              <label>Descrição</label>
+              <textarea name="descricao" rows="3"></textarea>
+              <div style="margin-top:12px">
+                <button class="btn" type="submit">Publicar</button>
+                <button class="btn ghost" type="button" id="cancel-doar">Cancelar</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Solicitar -->
+        <section class="view" id="solicitar" style="display:none">
+          <div class="card">
+            <h2>Solicitar Material</h2>
+            <p class="muted">Escolha um item e envie a solicitação.</p>
+            <div id="sol-list"></div>
+          </div>
+        </section>
+
+        <!-- Meu Material / (Admin) Todos os Materiais -->
+        <section class="view" id="meus" style="display:none">
+          <div class="card">
+            <h2 id="meus-title">Meu Material</h2>
+            <p class="muted" id="meus-desc">Itens que você cadastrou na plataforma.</p>
+            <div id="meus-list"></div>
+          </div>
+        </section>
+
+        <!-- Interações -->
+        <section class="view" id="interacoes" style="display:none">
+          <div class="card">
+            <h2>Minhas Interações</h2>
+            <div id="minhas-full"></div>
+          </div>
+        </section>
+
+        <!-- Configurações -->
+        <section class="view" id="config" style="display:none">
+          <div class="card">
+            <h2>Configurações</h2>
+            <form id="form-config">
+              <div class="row">
+                <div style="flex:1">
+                  <label>Nome</label><input name="nome" value="Usuário" />
+                </div>
+                <div style="flex:2">
+                  <label>Endereço</label><input name="end" />
+                </div>
+                <div style="width:140px">
+                  <label>Número</label><input name="numero" />
+                </div>
+                <div style="width:220px">
+                  <label>Telefone</label><input name="tel" required />
+                </div>
+              </div>
+              <div style="margin-top:10px"><label><input type="checkbox" name="notifs" /> Receber notificações</label></div>
+              <div style="margin-top:12px"><button class="btn" type="submit">Salvar</button></div>
+            </form>
+
+            <hr class="sep" />
+
+            <h3 class="section-title">Alterar Senha</h3>
+            <form id="form-pass">
+              <div class="row">
+                <div style="flex:1"><label>Senha atual</label><input type="password" name="old" required /></div>
+                <div style="flex:1"><label>Nova senha</label><input type="password" name="nova" minlength="6" required /></div>
+                <div style="flex:1"><label>Confirmar nova senha</label><input type="password" name="conf" minlength="6" required /></div>
+              </div>
+              <button class="btn" type="submit">Atualizar senha</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- Admin -->
+        <section class="view" id="admin" style="display:none">
+          <div class="card">
+            <h2>Administração</h2>
+            <h3 class="section-title" style="margin-top:12px">Usuários</h3>
+            <div id="admin-users"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===================== MODAL EDITAR ITEM ===================== -->
+  <div id="edit-item-overlay" class="overlay" style="display:none">
+    <div class="auth-card" role="dialog" aria-modal="true">
+      <h2 style="margin-top:0">Editar Material</h2>
+      <form id="form-edit-item">
+        <input type="hidden" name="id" />
+        <div class="row">
+          <div style="flex:1"><label>Nome</label><input name="nome" required /></div>
+          <div style="width:220px"><label>Categoria</label>
+            <select name="categoria"><option>Material escolar</option><option>Livro</option><option>Outros</option></select>
+          </div>
+        </div>
+        <div class="row">
+          <div style="flex:1"><label>Estado</label>
+            <select name="estado"><option>Novo</option><option>Bom</option><option>Usado</option></select>
+          </div>
+          <div style="width:220px"><label>Foto (imagem)</label><input type="file" id="edit-foto-file" accept="image/*" /></div>
+          <div style="width:220px"><label>ou Foto (URL)</label><input name="foto" /></div>
+        </div>
+        <div class="thumb-preview" id="preview-edit"></div>
+        <label>Descrição</label>
+        <textarea name="descricao" rows="3"></textarea>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn" type="submit">Salvar alterações</button>
+          <button class="btn ghost" type="button" id="cancel-edit-item">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL MARCAR DOAÇÃO ===================== -->
+  <div id="donate-overlay" class="overlay" style="display:none">
+    <div class="auth-card" role="dialog" aria-modal="true">
+      <h2 style="margin-top:0">Marcar doação</h2>
+      <div id="donate-requests" class="muted">Carregando...</div>
+      <div style="margin-top:12px;display:flex;gap:10px">
+        <button class="btn" id="donate-confirm" disabled>Confirmar doação</button>
+        <button class="btn ghost" id="donate-cancel" type="button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL EDITAR USUÁRIO (ADMIN) ===================== -->
+  <div id="edit-user-overlay" class="overlay" style="display:none">
+    <div class="auth-card" role="dialog" aria-modal="true">
+      <h2 style="margin-top:0">Editar Usuário</h2>
+      <form id="form-edit-user">
+        <input type="hidden" name="oldEmail" />
+        <label>Nome</label><input name="nome" required />
+        <label>E-mail</label><input name="email" type="email" required />
+        <label>Telefone</label><input name="tel" required />
+        <div class="row">
+          <div style="flex:1"><label>Endereço</label><input name="end" /></div>
+          <div style="width:160px"><label>Número</label><input name="numero" /></div>
+          <div style="width:200px"><label>Função</label>
+            <select name="role"><option value="user">Usuário</option><option value="admin">Administrador</option></select>
+          </div>
+        </div>
+        <label>Nova senha (opcional)</label><input name="senha" type="password" />
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn" type="submit">Salvar</button>
+          <button class="btn ghost" type="button" id="cancel-edit-user">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
